@@ -1,30 +1,22 @@
-# ---- Build Stage ----
-FROM node:20-alpine AS builder
+# ---------- build stage ----------
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY package.json ./
-RUN npm install
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" \
+    -o /mcp-service ./cmd/server
 
-COPY tsconfig.json ./
-COPY src/ ./src/
+# ---------- final stage ----------
+FROM alpine:3.19
 
-RUN npm run build
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
 
-# ---- Production Stage ----
-FROM node:20-alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-COPY package.json ./
-RUN npm install --omit=dev && npm cache clean --force
-
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /mcp-service /usr/local/bin/mcp-service
 
 EXPOSE 8080
-
-USER node
-
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["/usr/local/bin/mcp-service"]

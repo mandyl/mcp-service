@@ -1,144 +1,94 @@
 # mcp-service
 
-MCP Service — provides an HTTP REST API for querying a local Elasticsearch instance.
-Sits behind the [Higress](https://higress.ai) API Gateway; all requests have already
-been authenticated by `ext-auth-service` before reaching this service.
+MCP 业务服务，提供基于 Elasticsearch 的数据查询 API。
 
-## Architecture
+## 功能
 
-```
-Client
-  │  Authorization: Bearer <token>
-  ▼
-Higress Gateway
-  │  ext-auth plugin validates token
-  ▼
-mcp-service  ──▶  Elasticsearch
-```
+- `POST /api/v1/search`：全文搜索，支持分页与字段过滤
+- `GET /api/v1/indices`：查询可用 ES 索引列表
+- `GET /health`：健康检查（含 ES 连通性）
 
-## Environment Variables
+## 快速开始
 
-| Variable      | Default       | Description                           |
-|---------------|---------------|---------------------------------------|
-| `PORT`        | `8080`        | HTTP port                             |
-| `HOST`        | `0.0.0.0`     | Bind address                          |
-| `ES_HOST`     | `localhost`   | Elasticsearch hostname                |
-| `ES_PORT`     | `9200`        | Elasticsearch port                    |
-| `ES_USERNAME` | *(none)*      | Elasticsearch username (optional)     |
-| `ES_PASSWORD` | *(none)*      | Elasticsearch password (optional)     |
-| `LOG_LEVEL`   | `info`        | Pino log level                        |
-
-## Local Development
-
-Prerequisites: a running Elasticsearch instance (Docker is easiest).
+### 本地运行
 
 ```bash
-# Start Elasticsearch locally
-docker run -d --name es -p 9200:9200 \
-  -e "discovery.type=single-node" \
-  -e "xpack.security.enabled=false" \
-  docker.elastic.co/elasticsearch/elasticsearch:8.12.2
-
-# Install dependencies
-npm install
-
-# Run in dev mode
-npm run dev
+export PORT=8080
+export ES_ADDR=http://localhost:9200   # 或使用 ES_HOST + ES_PORT
+go run ./cmd/server
 ```
 
-### Example Requests
-
-```bash
-# Search
-curl -X POST http://localhost:8080/api/v1/search \
-  -H "Content-Type: application/json" \
-  -d '{"index": "my-index", "query": "hello world", "size": 5}'
-
-# List indices
-curl http://localhost:8080/api/v1/indices
-
-# Health check
-curl http://localhost:8080/health
-```
-
-## Docker Build
+### Docker 构建
 
 ```bash
 docker build -t mandyl/mcp-service:latest .
-
-docker run -p 8080:8080 \
-  -e ES_HOST=host.docker.internal \
-  mandyl/mcp-service:latest
 ```
 
-## Kubernetes Deployment
+### Kubernetes 部署
 
 ```bash
-# Ensure namespace exists
-kubectl create namespace backend --dry-run=client -o yaml | kubectl apply -f -
-
-# Deploy ConfigMap, Deployment, and Service
-kubectl apply -f deploy/k8s/configmap.yaml
+kubectl create namespace backend
 kubectl apply -f deploy/k8s/deployment.yaml
 kubectl apply -f deploy/k8s/service.yaml
-
-# Verify
-kubectl get pods -n backend -l app=mcp-service
-kubectl logs -n backend -l app=mcp-service
 ```
 
-## API Reference
+## 环境变量
 
-### `POST /api/v1/search`
+| 变量        | 默认值                                               | 说明                    |
+|------------|------------------------------------------------------|------------------------|
+| `PORT`     | `8080`                                               | 服务监听端口             |
+| `ES_ADDR`  | `http://elasticsearch.backend.svc.cluster.local:9200` | ES 完整地址（优先级高）  |
+| `ES_HOST`  | `elasticsearch.backend.svc.cluster.local`            | ES 主机名               |
+| `ES_PORT`  | `9200`                                               | ES 端口                 |
 
-Full-text search against an Elasticsearch index.
+> **注意**：若设置了 `ES_ADDR`，则 `ES_HOST` / `ES_PORT` 被忽略。
 
-**Request body:**
+## API
+
+### POST /api/v1/search
 
 ```json
+// 请求
 {
-  "index": "my-index",
-  "query": "search keywords",
+  "index": "logs-2026-03",
+  "query": "error",
   "from": 0,
   "size": 10,
-  "filters": {
-    "field": "status",
-    "value": "active"
-  }
+  "filters": { "field": "level", "value": "ERROR" }
 }
-```
 
-**Success response (`code: 0`):**
-
-```json
+// 响应（成功）
 {
   "code": 0,
   "message": "success",
   "data": {
     "total": 42,
-    "hits": [
-      { "_id": "doc1", "_score": 1.5, "_source": { "title": "..." } }
-    ],
+    "hits": [{ "_id": "xxx", "_score": 1.5, "_source": {} }],
     "from": 0,
     "size": 10
   }
 }
 ```
 
-**Error codes:**
+### GET /api/v1/indices
 
-| Code    | Meaning                          |
-|---------|----------------------------------|
-| `0`     | Success                          |
-| `40001` | Index not found                  |
-| `40002` | Invalid request parameters       |
-| `50001` | Elasticsearch connection failed  |
-| `50002` | Internal server error            |
+```json
+{ "code": 0, "message": "success", "data": { "indices": ["logs-2026-03"] } }
+```
 
-### `GET /api/v1/indices`
+### GET /health
 
-Returns all non-system Elasticsearch indices.
+```json
+{ "status": "ok", "es_connected": true, "timestamp": "2026-03-06T12:00:00Z" }
+```
 
-### `GET /health`
+## 错误码
 
-Liveness/readiness probe. Includes ES connectivity status.
+| 错误码  | 说明               |
+|--------|--------------------|
+| 0      | 成功               |
+| 40001  | 索引不存在          |
+| 40002  | 请求参数错误        |
+| 40003  | 查询语法错误        |
+| 50001  | Elasticsearch 连接失败 |
+| 50002  | 服务内部错误        |
