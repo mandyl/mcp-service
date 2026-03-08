@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mandyl/mcp-service/internal/es"
 	"github.com/mandyl/mcp-service/internal/handler"
+	"github.com/mandyl/mcp-service/internal/middleware"
 	"github.com/mandyl/mcp-service/pkg/config"
 )
 
@@ -22,7 +23,7 @@ func main() {
 	log.Printf("ES address: %s", cfg.ESAddr)
 
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(gin.Logger(), gin.Recovery(), middleware.DebugHeaders())
 
 	// Health check (no auth required, called by K8s probe).
 	r.GET("/health", handler.NewHealthHandler(esClient).Handle)
