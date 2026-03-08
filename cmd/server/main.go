@@ -33,6 +33,10 @@ func main() {
 	{
 		v1.POST("/search", handler.NewSearchHandler(esClient).Handle)
 		v1.GET("/indices", handler.NewIndicesHandler(esClient).Handle)
+		// Debug endpoint: returns all received request headers.
+		// Useful for verifying that Higress injects x-user-id after ext-auth.
+		// ⚠️ This route bypasses ext-auth (see HTTPRoute whitelist config).
+		v1.GET("/debug/headers", handler.NewDebugHeadersHandler().Handle)
 	}
 
 	addr := ":" + cfg.Port

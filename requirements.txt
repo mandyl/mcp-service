@@ -1,0 +1,3 @@
+flask
+gunicorn
+elasticsearch==7.17.10
